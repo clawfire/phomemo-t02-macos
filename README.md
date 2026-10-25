@@ -101,3 +101,9 @@ python3 -m t02bridge dry-run job.ras -o out.bin   # octets bruts sans BLE
 ```
 
 Testé : parsing raster v1/v2/v3 (big & little endian), octets du protocole, retry/spool, et une vraie chaîne CUPS (`lp` d'un PDF → PPD → socket → pont). Non testé ici : CoreBluetooth sur macOS 27 et la T02 physique — c'est le premier `install.sh --testpage` qui le dira.
+
+## Crédits & licence
+
+Le protocole de la T02 vient du travail de rétro-ingénierie de [TiMini-Print](https://github.com/Dejniel/TiMini-Print) (Dejniel), [phomymo](https://github.com/transcriptionstream/phomymo) (transcriptionstream) et [phomemo-tools](https://github.com/vivier/phomemo-tools) (Laurent Vivier). Aucun code n'en est repris, mais rien n'aurait été possible sans eux.
+
+Projet sans lien avec Phomemo. Code sous licence [MIT](LICENSE).
