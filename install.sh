@@ -120,6 +120,29 @@ sudo lpadmin -p "$QUEUE" -E \
   -o printer-is-shared=false
 ok "Imprimante ajoutée : elle apparaît dans Réglages > Imprimantes et dans ⌘P"
 
+# ── 8. Icône de barre de menus (optionnelle : l'impression marche sans) ────
+MENU_APP="$HOME/Applications/Phomemo T02.app"
+MENU_LABEL="net.clawfire.t02menu"
+MENU_AGENT="$HOME/Library/LaunchAgents/$MENU_LABEL.plist"
+say "Icône de barre de menus"
+launchctl bootout "gui/$(id -u)/$MENU_LABEL" >/dev/null 2>&1 || true
+if command -v swiftc >/dev/null 2>&1; then
+  mkdir -p "$MENU_APP/Contents/MacOS"
+  cp "$SRC/menubar/Info.plist" "$MENU_APP/Contents/Info.plist"
+  if swiftc -O -o "$MENU_APP/Contents/MacOS/T02Menu" "$SRC/menubar/main.swift" \
+       -framework AppKit -framework Network 2> "$LOG_DIR/menubar-build.log"; then
+    codesign --force --sign - --identifier "$MENU_LABEL" "$MENU_APP" >/dev/null 2>&1 || true
+    sed -e "s#@MENU_APP@#$MENU_APP#g" "$SRC/menubar/$MENU_LABEL.plist.in" > "$MENU_AGENT"
+    plutil -lint "$MENU_AGENT" >/dev/null
+    launchctl bootstrap "gui/$(id -u)" "$MENU_AGENT"
+    ok "Icône 🖨 active dans la barre de menus (se relance à chaque session)"
+  else
+    echo "   ⚠︎ compilation impossible — détails : $LOG_DIR/menubar-build.log (l'impression n'est pas affectée)"
+  fi
+else
+  echo "   ⚠︎ swiftc absent (xcode-select --install) — icône ignorée, l'impression n'est pas affectée"
+fi
+
 if (( TESTPAGE )); then
   say "Page de test via CUPS"
   TMP_PNG="$(mktemp -t t02test).png"
