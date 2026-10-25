@@ -42,6 +42,8 @@ class Bridge:
         self.cpu = ThreadPoolExecutor(max_workers=1, thread_name_prefix="t02-render")
         # Injected in tests to replace real Bluetooth.
         self.print_bytes = transport_factory or self._print_over_ble
+        self._conn: ble.T02Connection | None = None      # warm BLE link
+        self._idle_task: asyncio.Future | None = None    # closes it after keepalive
 
     # ---- intake --------------------------------------------------------
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -116,16 +118,54 @@ class Bridge:
         notify(self.cfg, reason, f"Job {path.stem} mis de côté")
 
     # ---- Bluetooth -----------------------------------------------------
-    async def _print_over_ble(self, job: pipeline.PreparedJob) -> None:
+    async def _connection(self) -> ble.T02Connection:
+        """Reuse the warm link if it is still up, otherwise scan + connect."""
+        if self._conn is not None and self._conn.is_connected:
+            log.debug("connexion BLE réutilisée")
+            return self._conn
+        await self._drop_connection()
         dev = await ble.find_printer(self.cfg.printer_name, self.cfg.address)
         if dev.address != self.cfg.address:  # remember it: next connect is instant
             self.cfg.address = dev.address
             self.cfg.save()
-        async with ble.T02Connection(dev, self.cfg.chunk_size, self.cfg.delay_ms) as conn:
+        self._conn = await ble.T02Connection(dev, self.cfg.chunk_size, self.cfg.delay_ms).open()
+        log.info("connecté à %s", self.cfg.printer_name)
+        return self._conn
+
+    async def _drop_connection(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is not None:
+            await conn.close()
+
+    def _schedule_idle_close(self) -> None:
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+        if self.cfg.keepalive_seconds <= 0:
+            self._idle_task = asyncio.ensure_future(self._drop_connection())
+            return
+
+        async def close_later() -> None:
+            await asyncio.sleep(self.cfg.keepalive_seconds)
+            if self.queue.empty():  # a job may have just arrived
+                log.info("inactif depuis %ds → déconnexion BLE", self.cfg.keepalive_seconds)
+                await self._drop_connection()
+
+        self._idle_task = asyncio.ensure_future(close_later())
+
+    async def _print_over_ble(self, job: pipeline.PreparedJob) -> None:
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+            self._idle_task = None
+        try:
+            conn = await self._connection()
             await conn.preflight()
             await conn.send(job.payload, settle_seconds=job.seconds)
             if conn.battery is not None:
                 log.info("batterie : %s", conn.battery)
+        except Exception:
+            await self._drop_connection()  # never reuse a link in an unknown state
+            raise
+        self._schedule_idle_close()
 
     # ---- lifecycle -----------------------------------------------------
     async def serve(self) -> None:

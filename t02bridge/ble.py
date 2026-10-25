@@ -54,7 +54,8 @@ async def find_printer(name: str, address: str | None, timeout: float = 10.0) ->
 
 
 class T02Connection:
-    """Async context manager: connect, stream a job, collect status, disconnect."""
+    """A BLE link to the T02. Usable as `async with` (one-shot) or kept open
+    across several jobs with open()/close() — the bridge does the latter."""
 
     def __init__(self, device: BLEDevice, chunk_size: int = 128, delay_ms: int = 20):
         self.device = device
@@ -65,7 +66,14 @@ class T02Connection:
         self.battery: int | None = None
         self._paper_out = asyncio.Event()
 
-    async def __aenter__(self) -> "T02Connection":
+    @property
+    def is_connected(self) -> bool:
+        try:
+            return bool(self.client.is_connected)
+        except Exception:
+            return False
+
+    async def open(self) -> "T02Connection":
         try:
             await self.client.connect()
         except Exception as exc:  # bleak raises a zoo of backend errors
@@ -80,11 +88,22 @@ class T02Connection:
             log.warning("notifications indisponibles (%s) — on imprime quand même", exc)
         return self
 
-    async def __aexit__(self, *exc_info) -> None:
+    async def close(self) -> None:
         try:
             await self.client.disconnect()
         except Exception:
             pass
+
+    def reset_job_state(self) -> None:
+        """Forget warnings from the previous job (the link may be reused)."""
+        self.warnings.clear()
+        self._paper_out.clear()
+
+    async def __aenter__(self) -> "T02Connection":
+        return await self.open()
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self.close()
 
     def _on_notify(self, _char, data: bytearray) -> None:
         frame = bytes(data)
@@ -102,6 +121,7 @@ class T02Connection:
 
     async def preflight(self) -> None:
         """Ask for paper / battery status; abort early if there is no paper."""
+        self.reset_job_state()
         for q in (QUERY_PAPER, QUERY_BATTERY):
             await self._write(q)
             await asyncio.sleep(0.25)

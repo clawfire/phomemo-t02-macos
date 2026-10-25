@@ -29,6 +29,8 @@ class Config:
     extra_feed: int = 0
     max_attempts: int = 6              # BLE attempts before a job lands in failed/
     notify: bool = True                # macOS notifications on errors
+    keepalive_seconds: int = 60        # keep BLE link open between jobs (0 = disconnect each time)
+    failed_retention_days: int = 7     # failed/ jobs older than this are purged
 
     @classmethod
     def load(cls) -> "Config":

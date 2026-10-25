@@ -75,10 +75,15 @@ async def _print_blobs(cfg: Config, blobs: list[bytes], override: dict) -> int:
     from .server import Bridge
 
     bridge = Bridge(cfg)
-    for blob in blobs:
-        job = pipeline.prepare(blob, cfg, override)
-        print(f"{job.pages} page(s), {len(job.payload)} octets → T02…")
-        await bridge._print_over_ble(job)
+    try:
+        for blob in blobs:  # one BLE connection for all files
+            job = pipeline.prepare(blob, cfg, override)
+            print(f"{job.pages} page(s), {len(job.payload)} octets → T02…")
+            await bridge._print_over_ble(job)
+    finally:
+        if bridge._idle_task is not None:
+            bridge._idle_task.cancel()
+        await bridge._drop_connection()
     print("OK ✓")
     return 0
 
