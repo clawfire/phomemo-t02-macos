@@ -1,109 +1,114 @@
-# Phomemo T02 → imprimante macOS
+# Phomemo T02 → macOS printer
 
-Ta T02 apparaît dans **Réglages › Imprimantes** et dans **⌘P** comme n'importe quelle imprimante. La conversion et l'envoi Bluetooth se font **en tâche de fond** : la file macOS se vide instantanément, le pont s'occupe du reste (et réessaie si la T02 dort).
+**English** · [Français](README.fr.md)
+
+Your Phomemo T02 shows up in **System Settings › Printers** and in **⌘P** like any other printer. No vendor app, no phone. Conversion and Bluetooth delivery happen **in the background**: the macOS print queue empties instantly, and the bridge takes it from there (retrying while the T02 is asleep).
 
 ```
-App (⌘P) ─► macOS rend la page ─► CUPS ─► socket://127.0.0.1:9100
-                                              │
-                         Phomemo T02 Bridge (LaunchAgent, Python)
-                         spool ► tramage 384 px ► ESC/POS T02 ► BLE ─► 🖨
+App (⌘P) ─► macOS renders the page ─► CUPS ─► socket://127.0.0.1:9100
+                                                    │
+                             Phomemo T02 Bridge (LaunchAgent, Python)
+                             spool ► 384-dot dithering ► T02 ESC/POS ► BLE ─► 🖨
 ```
 
-## Installation
+> The print-dialog options and the menu-bar app are labelled in French for now. Translations welcome.
+
+## Install
 
 ```bash
-brew install python          # Python ≥ 3.10 (ou pyenv) — le python3 d'Apple est trop vieux
-xcode-select --install       # si clang manque
-./install.sh --testpage      # allume la T02 avant
+brew install python          # Python ≥ 3.10 (or pyenv); Apple's python3 is too old
+xcode-select --install       # if clang/swiftc are missing
+./install.sh --testpage      # switch the T02 on first
 ```
 
-Pendant l'install, macOS demande l'accès Bluetooth pour **« Phomemo T02 Bridge »** → *Autoriser*. Puis un mot de passe admin pour ajouter la file CUPS. C'est tout.
+During the install, macOS asks for Bluetooth access for **"Phomemo T02 Bridge"** → *Allow*. Then an admin password, to add the CUPS queue. That's it.
 
-Re-lancer `install.sh` = mise à jour / réparation (idempotent). Le launcher n'est recompilé que s'il a changé : l'autorisation Bluetooth survit aux mises à jour. `./uninstall.sh [--purge]` pour tout retirer.
+Re-running `install.sh` updates or repairs everything (it's idempotent). The launcher is only rebuilt when it changes, so the Bluetooth permission survives updates. `./uninstall.sh [--purge]` removes it all.
 
-## À l'usage
+## Usage
 
-- **⌘P → Phomemo T02**, format **« Ticket 48 mm »** par défaut : le blanc en haut/bas est coupé automatiquement.
-- Formats fixes `48 × 30…200 mm` pour les étiquettes, ou taille personnalisée (largeur ≤ 48 mm).
-- Options dans la feuille d'impression (*Fonctionnalités de l'imprimante*) :
+- **⌘P → Phomemo T02**. The default paper size is **"Ticket 48 mm"**: blank space at the top and bottom is trimmed automatically, so the strip is exactly as long as the content.
+- Fixed `48 × 30…200 mm` sizes for labels, or a custom size (width ≤ 48 mm).
+- Options in the print sheet (*Printer Features*):
 
-| Option | Choix |
+| Option | Choices |
 |---|---|
-| Densité | Clair · **Normal** · Foncé · Très foncé |
-| Tramage | **Auto** (texte net + gris tramés) · Floyd-Steinberg · Seuil · Atkinson |
-| Avance papier | Aucune · +5 / +10 / +15 mm |
-| Couper le blanc | **Oui** · Non (taille exacte, pour étiquettes) |
+| Density | Light · **Normal** · Dark · Darkest |
+| Dithering | **Auto** (crisp text + dithered greys) · Floyd–Steinberg · Threshold · Atkinson |
+| Feed after job | None · +5 / +10 / +15 mm |
+| Trim blank space | **Yes** · No (exact size, for labels) |
 
-- T02 éteinte ? Le job attend dans le spool, réessais pendant ~9 min, notification macOS si besoin. Plus de papier / capot ouvert → notification.
+- T02 switched off? The job waits in the spool and is retried for ~9 min, with a macOS notification if needed. Out of paper or cover open → notification.
+- Browser previews show the whole page before trimming, so a short label can look centred on a long strip. The actual print only contains the content.
 
-## Barre de menus
+## Menu bar
 
-Une icône 🖨 (app native, sans dépendance) montre d'un coup d'œil :
+A 🖨 icon (native app, no dependency) shows at a glance:
 
-- **l'état** : prête, impression, plus de papier, en attente. Le ⚠︎ n'apparaît que si un job est bloqué ou a raté ; une T02 éteinte, c'est normal ;
-- **la batterie et le papier**, tels que remontés au dernier job ou à la dernière vérification ;
-- **la file** : jobs en attente, jobs ratés, dernier job.
+- **status**: ready, printing, out of paper, waiting. The ⚠︎ only appears when a job is stuck or has failed; a switched-off T02 is normal;
+- **battery and paper**, as reported by the last job or the last check;
+- **queue**: pending jobs, failed jobs, last job.
 
-Actions : *Vérifier l'imprimante*, *Imprimer une page de test*, *Relancer les jobs ratés*, journal, réglages, redémarrer le pont.
+Actions: *Check printer*, *Print a test page*, *Retry failed jobs*, log, settings, restart the bridge.
 
-L'app ne touche jamais au Bluetooth : elle lit `status.json` et parle au pont par son socket local. *Quitter* la ferme jusqu'à la prochaine session. Si elle n'a pas compilé, le détail est dans `~/Library/Logs/PhomemoT02/menubar-build.log` ; l'impression n'en dépend pas.
+The app never touches Bluetooth: it reads `status.json` and talks to the bridge through its local socket. *Quit* closes it until the next login. If it failed to build, details are in `~/Library/Logs/PhomemoT02/menubar-build.log`; printing doesn't depend on it.
 
-## Commandes utiles
+## Handy commands
 
 ```bash
 B="$HOME/Library/Application Support/PhomemoT02"
 alias t02='PYTHONPATH="$B/app" "$B/venv/bin/python3" -m t02bridge'
 
-t02 scan --save              # retrouver / épingler la T02
-t02 print photo.jpg          # impression directe, sans CUPS
+t02 scan --save              # find / pin your T02
+t02 print photo.jpg          # print directly, without CUPS
 t02 testpage --density 3
-t02 status                   # état du pont et de la T02
-t02 status --ping            # … après avoir interrogé la T02 (batterie, papier)
-t02 retry --list             # jobs ratés (gardés 7 jours)
-t02 retry                    # … renvoyés au pont, qui les réimprime
+t02 status                   # bridge and printer state
+t02 status --ping            # … after querying the T02 (battery, paper)
+t02 retry --list             # failed jobs (kept 7 days)
+t02 retry                    # … handed back to the bridge, which prints them
 tail -f ~/Library/Logs/PhomemoT02/bridge.log
 ```
 
-Réglages par défaut dans `~/Library/Application Support/PhomemoT02/config.json` :
+Defaults live in `~/Library/Application Support/PhomemoT02/config.json`:
 
-| Clé | Défaut | Rôle |
+| Key | Default | Purpose |
 |---|---|---|
-| `density`, `dither`, `trim` | `2`, `"auto"`, `true` | valeurs si l'app n'en choisit pas |
-| `keepalive_seconds` | `60` | connexion BLE gardée ouverte entre deux jobs (`0` = coupe à chaque fois) |
-| `failed_retention_days` | `7` | âge max des jobs ratés (`0` = jamais supprimés) |
-| `photo_dither` | `"atkinson"` | tramage des zones grises en mode Auto (`"floyd"` pour l'ancien rendu) |
-| `printer_name`, `port` | `"T02"`, `9100` | nom Bluetooth, port local |
+| `density`, `dither`, `trim` | `2`, `"auto"`, `true` | used when the app doesn't choose |
+| `keepalive_seconds` | `60` | keep the BLE link open between jobs (`0` = disconnect every time) |
+| `failed_retention_days` | `7` | max age of failed jobs (`0` = keep forever) |
+| `photo_dither` | `"atkinson"` | how Auto mode dithers grey areas (`"floyd"` for the older look) |
+| `printer_name`, `port` | `"T02"`, `9100` | Bluetooth name, local port |
 
-Après modification : `launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge`.
+After editing: `launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge`.
 
-**Logs** : `bridge.log` tourne tout seul (1 Mo × 3 fichiers). `launchd.log`, à côté, ne contient que d'éventuels crashs.
+**Logs**: `bridge.log` rotates on its own (3 × 1 MB). `launchd.log`, next to it, only catches crashes.
 
-> ⚠️ Pour les commandes `t02 scan/print` lancées dans le Terminal, c'est **Terminal** qui doit avoir l'accès Bluetooth (Réglages › Confidentialité › Bluetooth). Le pont, lui, utilise sa propre autorisation.
+> ⚠️ For `t02 scan/print` run from Terminal, it's **Terminal** that needs Bluetooth access (System Settings › Privacy & Security › Bluetooth). The bridge uses its own permission.
 
-## Choix techniques (le « pourquoi »)
+## Design choices (the "why")
 
-- **Pas de filtre ni de backend CUPS maison.** `/usr/libexec/cups` est protégé par SIP. Le PPD déclare le raster CUPS comme format final (`cupsFilter … -`) : macOS fait le rendu PDF avec son propre filtre, et le backend `socket://` intégré livre le flux au pont. Les options du PPD voyagent dans l'en-tête raster (`cupsInteger0-3`).
-- **Un mini launcher C dans un `.app`.** macOS tue tout process qui touche CoreBluetooth sans `NSBluetoothAlwaysUsageDescription` dans *son* Info.plist. Le launcher porte cette clé et lance Python en processus enfant, qui hérite de l'autorisation.
-- **Protocole** repris octet pour octet de l'app officielle via [TiMini-Print](https://github.com/Dejniel/TiMini-Print), recoupé avec [phomymo](https://github.com/transcriptionstream/phomymo) et [phomemo-tools](https://github.com/vivier/phomemo-tools) : GATT `ff00/ff02/ff03`, `GS v 0` par blocs de 255 lignes, paquets de 128 o / 20 ms.
-- **Tramage auto hybride** : seuil net sur le texte, Atkinson seulement sur les aplats gris (détection par filtre min/max 5×5, qui ignore l'anticrénelage des lettres). Atkinson plutôt que Floyd-Steinberg : plus contrasté, moins de points isolés, qui bavent sur papier thermique.
-- **Barre de menus découplée** : l'app native lit un `status.json` publié par le pont et lui envoie des commandes `#T02:…` sur le socket local. Une seule autorisation Bluetooth (celle du pont), et le pont tourne même si l'icône est fermée.
+- **No custom CUPS filter or backend.** `/usr/libexec/cups` is protected by SIP. The PPD declares CUPS raster as the final format (`cupsFilter … -`): macOS renders the PDF with its own filter, and the built-in `socket://` backend hands the stream to the bridge. PPD options travel inside the raster header (`cupsInteger0-3`).
+- **A tiny C launcher inside a `.app`.** macOS kills any process that touches CoreBluetooth without an `NSBluetoothAlwaysUsageDescription` in *its own* Info.plist. The launcher carries that key and starts Python as a child process, which inherits the permission.
+- **Protocol** taken byte for byte from the official app via [TiMini-Print](https://github.com/Dejniel/TiMini-Print), cross-checked with [phomymo](https://github.com/transcriptionstream/phomymo) and [phomemo-tools](https://github.com/vivier/phomemo-tools): GATT `ff00/ff02/ff03`, `GS v 0` in 255-row blocks, 128-byte packets every 20 ms.
+- **Hybrid auto dithering**: a hard threshold for text, Atkinson only on flat grey areas (found with a 5×5 min/max filter that ignores glyph anti-aliasing). Atkinson rather than Floyd–Steinberg: more contrast, fewer isolated dots, which smear on thermal paper.
+- **Decoupled menu bar**: the native app reads a `status.json` published by the bridge and sends it `#T02:…` commands over the local socket. One Bluetooth permission (the bridge's), and the bridge keeps running even when the icon is closed.
 
-## Si Apple coupe les drivers PPD
+## If Apple drops PPD drivers
 
-CUPS affiche déjà « *Printer drivers are deprecated* ». Le jour où `lpadmin -P` ne marche plus, la voie de sortie est de faire parler le pont en **IPP Everywhere** (macOS l'ajoute alors sans driver). Le cœur (raster PWG déjà supporté, tramage, BLE) ne change pas — seule la porte d'entrée change.
+CUPS already warns that *printer drivers are deprecated*. If `lpadmin -P` stops working one day, the way out is to have the bridge speak **IPP Everywhere** (macOS then adds it driverless). The core (PWG raster already supported, dithering, BLE) stays the same; only the front door changes.
 
-## Dev
+## Development
 
 ```bash
-python3 -m pytest -q tests/       # 26 tests, sans imprimante ni Bluetooth
-python3 tools/gen_ppd.py          # régénère le PPD (ajoute tes formats dans SIZES)
-python3 -m t02bridge dry-run job.ras -o out.bin   # octets bruts sans BLE
+python3 -m pytest -q tests/       # 26 tests, no printer or Bluetooth needed
+python3 tools/gen_ppd.py          # regenerate the PPD (add your sizes to SIZES)
+python3 -m t02bridge dry-run job.ras -o out.bin   # raw printer bytes, no BLE
 ```
 
-Testé : parsing raster v1/v2/v3 (big & little endian), octets du protocole, retry/spool, et une vraie chaîne CUPS (`lp` d'un PDF → PPD → socket → pont). Non testé ici : CoreBluetooth sur macOS 27 et la T02 physique — c'est le premier `install.sh --testpage` qui le dira.
+Tested: raster parsing v1/v2/v3 (big & little endian), protocol bytes, retry/spool, and a real CUPS chain (`lp` of a PDF → PPD → socket → bridge). In the field: a T02 on macOS 27.0.1 (Apple Silicon), printing Spoolman labels from Chrome.
 
-## Crédits & licence
+## Credits & licence
 
-Le protocole de la T02 vient du travail de rétro-ingénierie de [TiMini-Print](https://github.com/Dejniel/TiMini-Print) (Dejniel), [phomymo](https://github.com/transcriptionstream/phomymo) (transcriptionstream) et [phomemo-tools](https://github.com/vivier/phomemo-tools) (Laurent Vivier). Aucun code n'en est repris, mais rien n'aurait été possible sans eux.
+The T02 protocol comes from the reverse-engineering work of [TiMini-Print](https://github.com/Dejniel/TiMini-Print) (Dejniel), [phomymo](https://github.com/transcriptionstream/phomymo) (transcriptionstream) and [phomemo-tools](https://github.com/vivier/phomemo-tools) (Laurent Vivier). No code was copied, but none of this would exist without them.
 
-Projet sans lien avec Phomemo. Code sous licence [MIT](LICENSE).
+Not affiliated with Phomemo. Code under the [MIT](LICENSE) licence.
