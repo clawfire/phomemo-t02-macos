@@ -1,7 +1,8 @@
-"""CLI:  python -m t02bridge {serve|scan|print|testpage|dry-run}
+"""CLI:  python -m t02bridge {serve|scan|retry|print|testpage|dry-run}
 
   serve            run the background bridge (what the LaunchAgent starts)
   scan [--save]    find nearby T02s; --save pins the first one in config.json
+  retry [--list]   send failed jobs back to the running bridge
   print FILE…      print images or a CUPS raster file directly (no CUPS)
   testpage         print a calibration page
   dry-run FILE -o OUT.bin   build printer bytes without Bluetooth (debug)
@@ -71,6 +72,40 @@ async def _cmd_scan(cfg: Config, save: bool) -> int:
     return 0
 
 
+def _cmd_retry(cfg: Config, list_only: bool) -> int:
+    """Hand failed jobs back to the running bridge, exactly like CUPS does (socket)."""
+    import socket
+    import time
+
+    from .config import FAILED_DIR
+
+    jobs = sorted(FAILED_DIR.glob("*.job"))
+    if not jobs:
+        print("Aucun job raté. ✨")
+        return 0
+    for j in jobs:
+        age_h = (time.time() - j.stat().st_mtime) / 3600
+        print(f"{j.stem}  {j.stat().st_size // 1024:>5} Ko  raté il y a {age_h:.0f} h")
+    if list_only:
+        return 0
+
+    sent = 0
+    for j in jobs:
+        try:
+            with socket.create_connection((cfg.host, cfg.port), timeout=5) as s:
+                s.sendall(j.read_bytes())
+                s.shutdown(socket.SHUT_WR)
+                s.recv(1)  # wait until the bridge has spooled it and closed
+        except OSError as exc:
+            print(f"✗ le pont ne répond pas sur {cfg.host}:{cfg.port} ({exc}).")
+            print("  Relance-le : launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge")
+            break
+        j.unlink()
+        sent += 1
+    print(f"→ {sent}/{len(jobs)} job(s) remis en file d'attente (suis le log pour l'impression)")
+    return 0 if sent == len(jobs) else 1
+
+
 async def _print_blobs(cfg: Config, blobs: list[bytes], override: dict) -> int:
     from .server import Bridge
 
@@ -124,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve")
     s = sub.add_parser("scan")
     s.add_argument("--save", action="store_true")
+    r = sub.add_parser("retry", help="renvoie les jobs ratés (failed/) au pont")
+    r.add_argument("--list", action="store_true", help="liste sans renvoyer")
     for name in ("print", "dry-run", "testpage"):
         sp = sub.add_parser(name)
         if name != "testpage":
@@ -149,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "scan":
         return asyncio.run(_cmd_scan(cfg, args.save))
+    if args.cmd == "retry":
+        return _cmd_retry(cfg, args.list)
     if args.cmd == "testpage":
         return asyncio.run(_print_blobs(cfg, [_testpage()], _overrides(args)))
     blobs = [open(f, "rb").read() for f in args.files]

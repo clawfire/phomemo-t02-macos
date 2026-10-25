@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -112,9 +113,34 @@ class Bridge:
                 await asyncio.sleep(BACKOFF[min(attempt - 1, len(BACKOFF) - 1)])
         self._fail(path, "imprimante injoignable après plusieurs essais")
 
+    def purge_failed(self) -> int:
+        """Delete failed jobs older than failed_retention_days (0 = keep forever)."""
+        days = self.cfg.failed_retention_days
+        if days <= 0:
+            return 0
+        cutoff = time.time() - days * 86400
+        removed = 0
+        for p in FAILED_DIR.glob("*.job"):
+            try:
+                if p.stat().st_mtime < cutoff:
+                    p.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        if removed:
+            log.info("%d vieux job(s) raté(s) supprimé(s) (> %d jours)", removed, days)
+        return removed
+
+    async def _purge_loop(self) -> None:
+        while True:
+            self.purge_failed()
+            await asyncio.sleep(86400)
+
     def _fail(self, path: Path, reason: str) -> None:
         if path.exists():
-            path.replace(FAILED_DIR / path.name)
+            dest = FAILED_DIR / path.name
+            path.replace(dest)
+            os.utime(dest)  # retention counts from the failure, not the original print
         notify(self.cfg, reason, f"Job {path.stem} mis de côté")
 
     # ---- Bluetooth -----------------------------------------------------
@@ -181,4 +207,4 @@ class Bridge:
         server = await asyncio.start_server(self.handle_client, self.cfg.host, self.cfg.port)
         log.info("bridge prêt sur %s:%d (imprimante BLE « %s »)", self.cfg.host, self.cfg.port, self.cfg.printer_name)
         async with server:
-            await asyncio.gather(server.serve_forever(), self.worker())
+            await asyncio.gather(server.serve_forever(), self.worker(), self._purge_loop())
