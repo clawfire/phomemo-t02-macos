@@ -212,3 +212,119 @@ def test_auto_dither_keeps_text_sharp_and_dithers_greys():
     assert 0.3 < ratio < 0.7                          # dithered, not a solid block
     text = set(bw.crop((0, 0, 384, 40)).tobytes())
     assert text == {0, 255}
+
+
+# ---------------------------------------------------------------- v1.1: warm BLE, purge, retry
+class FakeConn:
+    opened = 0
+
+    def __init__(self, dev, chunk, delay):
+        self.connected, self.sent, self.battery = False, [], None
+
+    @property
+    def is_connected(self):
+        return self.connected
+
+    async def open(self):
+        FakeConn.opened += 1
+        self.connected = True
+        return self
+
+    async def close(self):
+        self.connected = False
+
+    async def preflight(self):
+        pass
+
+    async def send(self, payload, settle_seconds=0):
+        if payload == b"boom":
+            raise ble.PrinterError("Plus de papier")
+        self.sent.append(payload)
+
+
+def _fake_ble(monkeypatch):
+    class Dev:
+        address = "UUID-1"
+
+    async def find(name, address, timeout=10.0):
+        return Dev()
+
+    FakeConn.opened = 0
+    monkeypatch.setattr(ble, "find_printer", find)
+    monkeypatch.setattr(ble, "T02Connection", FakeConn)
+    monkeypatch.setattr(Config, "save", lambda self: None)
+
+
+def test_ble_link_is_reused_then_closed_when_idle(monkeypatch):
+    _fake_ble(monkeypatch)
+
+    async def scenario():
+        b = server.Bridge(Config(keepalive_seconds=0.05))
+        job = pipeline.PreparedJob(b"x", 1, 0.0, protocol.JobSettings())
+        await b._print_over_ble(job)
+        await b._print_over_ble(job)
+        assert FakeConn.opened == 1 and b._conn.is_connected     # warm link reused
+        await asyncio.sleep(0.15)
+        assert b._conn is None                                    # closed after idle
+
+    asyncio.run(scenario())
+
+
+def test_ble_link_dropped_after_error(monkeypatch):
+    _fake_ble(monkeypatch)
+
+    async def scenario():
+        b = server.Bridge(Config(keepalive_seconds=60))
+        bad = pipeline.PreparedJob(b"boom", 1, 0.0, protocol.JobSettings())
+        with pytest.raises(ble.PrinterError):
+            await b._print_over_ble(bad)
+        assert b._conn is None
+        await b._print_over_ble(pipeline.PreparedJob(b"ok", 1, 0.0, protocol.JobSettings()))
+        assert FakeConn.opened == 2                               # fresh link after the error
+        b._idle_task.cancel()
+
+    asyncio.run(scenario())
+
+
+def test_purge_failed(tmp_path, monkeypatch):
+    import os, time
+    monkeypatch.setattr(server, "FAILED_DIR", tmp_path)
+    old, new = tmp_path / "old.job", tmp_path / "new.job"
+    old.write_bytes(b"a"); new.write_bytes(b"b")
+    t = time.time() - 8 * 86400
+    os.utime(old, (t, t))
+    assert server.Bridge(Config(failed_retention_days=7)).purge_failed() == 1
+    assert not old.exists() and new.exists()
+
+
+def test_retry_command_requeues_through_socket(tmp_path, monkeypatch):
+    from t02bridge import __main__ as cli, config
+
+    monkeypatch.setattr(config, "FAILED_DIR", tmp_path / "failed")
+    monkeypatch.setattr(server, "SPOOL_DIR", tmp_path / "spool")
+    (tmp_path / "failed").mkdir(); (tmp_path / "spool").mkdir()
+    (tmp_path / "failed" / "a.job").write_bytes(raster_stream(make_page()))
+
+    async def scenario():
+        b = server.Bridge(Config())
+        srv = await asyncio.start_server(b.handle_client, "127.0.0.1", 0)
+        port = srv.sockets[0].getsockname()[1]
+        rc = await asyncio.get_running_loop().run_in_executor(
+            None, cli._cmd_retry, Config(port=port), False)
+        srv.close()
+        return rc, b.queue.qsize()
+
+    rc, queued = asyncio.run(scenario())
+    assert rc == 0 and queued == 1
+    assert not (tmp_path / "failed" / "a.job").exists()
+    assert len(list((tmp_path / "spool").glob("*.job"))) == 1
+
+
+def test_rotating_log_in_daemon_mode(tmp_path, monkeypatch):
+    import logging
+    from t02bridge import __main__ as cli, config
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path)
+    cli._setup_logging(False, to_file=True)
+    h = logging.getLogger().handlers[0]
+    assert h.__class__.__name__ == "RotatingFileHandler" and h.maxBytes == 1_000_000
+    logging.getLogger().handlers.clear()
