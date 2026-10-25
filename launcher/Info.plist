@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>net.clawfire.t02bridge</string>
+    <key>CFBundleName</key>
+    <string>Phomemo T02 Bridge</string>
+    <key>CFBundleDisplayName</key>
+    <string>Phomemo T02 Bridge</string>
+    <key>CFBundleExecutable</key>
+    <string>T02Bridge</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Le pont d'impression envoie vos documents à l'imprimante Phomemo T02 via Bluetooth.</string>
+</dict>
+</plist>
