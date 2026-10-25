@@ -219,7 +219,7 @@ class FakeConn:
     opened = 0
 
     def __init__(self, dev, chunk, delay):
-        self.connected, self.sent, self.battery = False, [], None
+        self.connected, self.sent, self.battery, self.paper = False, [], None, None
 
     @property
     def is_connected(self):
@@ -328,3 +328,76 @@ def test_rotating_log_in_daemon_mode(tmp_path, monkeypatch):
     h = logging.getLogger().handlers[0]
     assert h.__class__.__name__ == "RotatingFileHandler" and h.maxBytes == 1_000_000
     logging.getLogger().handlers.clear()
+
+
+# ---------------------------------------------------------------- v1.2: status.json + commands
+def _read_status():
+    import json
+    from t02bridge.config import STATUS_FILE
+    return json.loads(STATUS_FILE.read_text())
+
+
+def test_status_command_queries_printer(monkeypatch):
+    _fake_ble(monkeypatch)
+
+    async def preflight(self):
+        self.battery, self.paper = 87, "ok"
+    monkeypatch.setattr(FakeConn, "preflight", preflight)
+
+    async def scenario():
+        from t02bridge import client
+        b = server.Bridge(Config(keepalive_seconds=60))
+        srv = await asyncio.start_server(b.handle_client, "127.0.0.1", 0)
+        port = srv.sockets[0].getsockname()[1]
+        worker = asyncio.create_task(b.worker())
+        await asyncio.get_running_loop().run_in_executor(
+            None, client.command, Config(port=port), "status")
+        await asyncio.wait_for(b.queue.join(), 5)
+        worker.cancel(); srv.close(); b._idle_task.cancel()
+
+    asyncio.run(scenario())
+    st = _read_status()
+    assert st["battery"] == 87 and st["paper"] == "ok"
+    assert st["state"] == "idle" and st["connected"] is True
+    assert not list(server.SPOOL_DIR.glob("*.job"))  # a command is never spooled as a job
+
+
+def test_status_offline_when_printer_unreachable(monkeypatch):
+    async def nowhere(name, address, timeout=10.0):
+        raise ble.PrinterUnreachable("introuvable")
+    monkeypatch.setattr(ble, "find_printer", nowhere)
+
+    async def scenario():
+        b = server.Bridge(Config())
+        await b.check_printer()
+    asyncio.run(scenario())
+    assert _read_status()["state"] == "offline"
+
+
+def test_testpage_command_prints_and_records_last_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "SPOOL_DIR", tmp_path)
+    printed = []
+
+    async def fake(job):
+        printed.append(job)
+
+    async def scenario():
+        b = server.Bridge(Config(), transport_factory=fake)
+        await b.queue.put("testpage")
+        worker = asyncio.create_task(b.worker())
+        await asyncio.wait_for(b.queue.join(), 5)
+        worker.cancel()
+    asyncio.run(scenario())
+    assert len(printed) == 1 and printed[0].pages == 1
+    st = _read_status()
+    assert st["last_job_ok"] is True and st["state"] == "idle"
+
+
+def test_auto_mode_uses_atkinson_on_greys_by_default():
+    from t02bridge.imaging import RenderOptions, _atkinson, to_bilevel
+    img = Image.new("L", (384, 120), 255)
+    ImageDraw.Draw(img).rectangle([0, 0, 383, 119], fill=150)
+    auto = to_bilevel(img, RenderOptions(dither="auto")).tobytes()
+    assert auto == _atkinson(img).tobytes()
+    floyd = to_bilevel(img, RenderOptions(dither="auto", photo_dither="floyd")).tobytes()
+    assert floyd != auto
