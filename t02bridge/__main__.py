@@ -1,7 +1,8 @@
-"""CLI:  python -m t02bridge {serve|scan|retry|print|testpage|dry-run}
+"""CLI:  python -m t02bridge {serve|status|scan|retry|print|testpage|dry-run}
 
   serve            run the background bridge (what the LaunchAgent starts)
   scan [--save]    find nearby T02s; --save pins the first one in config.json
+  status [--ping]  bridge + printer state (--ping queries the T02 first)
   retry [--list]   send failed jobs back to the running bridge
   print FILE…      print images or a CUPS raster file directly (no CUPS)
   testpage         print a calibration page
@@ -17,6 +18,7 @@ import sys
 
 from . import __version__, ble, pipeline
 from .config import Config, ensure_dirs
+from .testpage import make_testpage
 
 
 LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
@@ -72,9 +74,42 @@ async def _cmd_scan(cfg: Config, save: bool) -> int:
     return 0
 
 
+def _cmd_status(cfg: Config, ping: bool) -> int:
+    import json
+    import time
+
+    from .client import command
+    from .config import STATUS_FILE
+
+    if ping:
+        try:
+            command(cfg, "status")
+        except OSError as exc:
+            print(f"✗ le pont ne répond pas ({exc})")
+            return 1
+        time.sleep(6)  # leave time for scan + connect + query
+    if not STATUS_FILE.exists():
+        print("Pas encore d'état publié (le pont tourne-t-il ?)")
+        return 1
+    st = json.loads(STATUS_FILE.read_text())
+    age = time.time() - st.get("updated", 0)
+    alive = age < 90
+    print(f"Pont      : {'actif' if alive else f'muet depuis {age/60:.0f} min'} (v{st.get('version')})")
+    print(f"État      : {st.get('state')} {st.get('detail') or ''}".rstrip())
+    print(f"Bluetooth : {'connecté' if st.get('connected') else 'déconnecté'}")
+    if st.get("battery") is not None:
+        mins = (time.time() - st["battery_at"]) / 60
+        print(f"Batterie  : {st['battery']} (il y a {mins:.0f} min)")
+    if st.get("paper"):
+        print(f"Papier    : {'OK' if st['paper'] == 'ok' else 'VIDE'}")
+    print(f"File      : {st.get('queue', 0)} en attente · {st.get('failed', 0)} raté(s)")
+    if st.get("last_error"):
+        print(f"Dernière erreur : {st['last_error']}")
+    return 0 if alive else 1
+
+
 def _cmd_retry(cfg: Config, list_only: bool) -> int:
     """Hand failed jobs back to the running bridge, exactly like CUPS does (socket)."""
-    import socket
     import time
 
     from .config import FAILED_DIR
@@ -89,13 +124,12 @@ def _cmd_retry(cfg: Config, list_only: bool) -> int:
     if list_only:
         return 0
 
+    from .client import send
+
     sent = 0
     for j in jobs:
         try:
-            with socket.create_connection((cfg.host, cfg.port), timeout=5) as s:
-                s.sendall(j.read_bytes())
-                s.shutdown(socket.SHUT_WR)
-                s.recv(1)  # wait until the bridge has spooled it and closed
+            send(cfg, j.read_bytes())
         except OSError as exc:
             print(f"✗ le pont ne répond pas sur {cfg.host}:{cfg.port} ({exc}).")
             print("  Relance-le : launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge")
@@ -123,35 +157,6 @@ async def _print_blobs(cfg: Config, blobs: list[bytes], override: dict) -> int:
     return 0
 
 
-def _testpage() -> bytes:
-    """A small calibration page: text, gradient, fine lines, checkerboard."""
-    import io
-
-    from PIL import Image, ImageDraw, ImageFont
-
-    w, h = 384, 300
-    img = Image.new("L", (w, h), 255)
-    d = ImageDraw.Draw(img)
-    try:
-        big, small = ImageFont.load_default(size=28), ImageFont.load_default(size=16)
-    except TypeError:  # Pillow < 10.1
-        big = small = ImageFont.load_default()
-    d.text((8, 6), "Phomemo T02", font=big, fill=0)
-    d.text((8, 42), f"macOS bridge v{__version__} · 203 dpi · 384 px", font=small, fill=0)
-    for x in range(w):  # gradient
-        d.line([(x, 72), (x, 132)], fill=int(255 * x / (w - 1)))
-    for i, lw in enumerate((1, 2, 3, 4)):  # line weights
-        d.line([(8, 150 + i * 12), (w - 8, 150 + i * 12)], fill=0, width=lw)
-    for y in range(205, 285, 10):  # checkerboard
-        for x in range(8, w - 8, 10):
-            if ((x // 10) + (y // 10)) % 2:
-                d.rectangle([x, y, x + 9, y + 9], fill=0)
-    d.rectangle([0, 0, w - 1, h - 1], outline=0)
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    return buf.getvalue()
-
-
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="t02bridge", description="Phomemo T02 ↔ macOS bridge")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -159,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve")
     s = sub.add_parser("scan")
     s.add_argument("--save", action="store_true")
+    st = sub.add_parser("status", help="état du pont et de la T02")
+    st.add_argument("--ping", action="store_true", help="interroge la T02 avant d'afficher")
     r = sub.add_parser("retry", help="renvoie les jobs ratés (failed/) au pont")
     r.add_argument("--list", action="store_true", help="liste sans renvoyer")
     for name in ("print", "dry-run", "testpage"):
@@ -186,10 +193,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "scan":
         return asyncio.run(_cmd_scan(cfg, args.save))
+    if args.cmd == "status":
+        return _cmd_status(cfg, args.ping)
     if args.cmd == "retry":
         return _cmd_retry(cfg, args.list)
     if args.cmd == "testpage":
-        return asyncio.run(_print_blobs(cfg, [_testpage()], _overrides(args)))
+        return asyncio.run(_print_blobs(cfg, [make_testpage()], _overrides(args)))
     blobs = [open(f, "rb").read() for f in args.files]
     if args.cmd == "print":
         return asyncio.run(_print_blobs(cfg, blobs, _overrides(args)))

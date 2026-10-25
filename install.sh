@@ -124,7 +124,7 @@ if (( TESTPAGE )); then
   say "Page de test via CUPS"
   TMP_PNG="$(mktemp -t t02test).png"
   PYTHONPATH="$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" -c \
-    "import sys; from t02bridge.__main__ import _testpage; open(sys.argv[1],'wb').write(_testpage())" "$TMP_PNG"
+    "import sys; from t02bridge.testpage import make_testpage; open(sys.argv[1],'wb').write(make_testpage())" "$TMP_PNG"
   lp -d "$QUEUE" -o media=Receipt48 "$TMP_PNG" >/dev/null && ok "Envoyée — suis le log : tail -f \"$LOG_DIR/bridge.log\""
 fi
 

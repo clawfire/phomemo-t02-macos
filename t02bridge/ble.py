@@ -40,6 +40,15 @@ async def scan(timeout: float = 8.0) -> list[BLEDevice]:
 
 
 async def find_printer(name: str, address: str | None, timeout: float = 10.0) -> BLEDevice:
+    try:
+        return await _find_printer(name, address, timeout)
+    except PrinterUnreachable:
+        raise
+    except Exception as exc:  # Bluetooth off, adapter missing, permission denied…
+        raise PrinterUnreachable(f"Bluetooth indisponible : {exc}") from exc
+
+
+async def _find_printer(name: str, address: str | None, timeout: float) -> BLEDevice:
     if address:
         dev = await BleakScanner.find_device_by_address(address, timeout=timeout)
         if dev:
@@ -64,6 +73,7 @@ class T02Connection:
         self.client = BleakClient(device, timeout=15.0)
         self.warnings: list[str] = []
         self.battery: int | None = None
+        self.paper: str | None = None  # "ok" | "out", from 1A 06 notifications
         self._paper_out = asyncio.Event()
 
     @property
@@ -109,7 +119,10 @@ class T02Connection:
         frame = bytes(data)
         log.debug("notify %s", frame.hex(" "))
         if len(frame) >= 3 and frame[0] == 0x1A and frame[1] == 0x04:
-            self.battery = frame[2]
+            # percent, except a few "low battery" codes (mapping from phomymo)
+            self.battery = {0xA4: 0, 0xA3: 3, 0xA2: 5, 0xA1: 10}.get(frame[2], frame[2])
+        if len(frame) >= 3 and frame[0] == 0x1A and frame[1] == 0x06:
+            self.paper = "out" if frame[2] == 0x88 else "ok"
         msg = describe_status(frame)
         if msg:
             self.warnings.append(msg)
