@@ -19,7 +19,7 @@ xcode-select --install       # si clang manque
 
 Pendant l'install, macOS demande l'accès Bluetooth pour **« Phomemo T02 Bridge »** → *Autoriser*. Puis un mot de passe admin pour ajouter la file CUPS. C'est tout.
 
-Re-lancer `install.sh` = mise à jour / réparation (idempotent). `./uninstall.sh [--purge]` pour tout retirer.
+Re-lancer `install.sh` = mise à jour / réparation (idempotent). Le launcher n'est recompilé que s'il a changé : l'autorisation Bluetooth survit aux mises à jour. `./uninstall.sh [--purge]` pour tout retirer.
 
 ## À l'usage
 
@@ -45,11 +45,23 @@ alias t02='PYTHONPATH="$B/app" "$B/venv/bin/python3" -m t02bridge'
 t02 scan --save              # retrouver / épingler la T02
 t02 print photo.jpg          # impression directe, sans CUPS
 t02 testpage --density 3
+t02 retry --list             # jobs ratés (gardés 7 jours)
+t02 retry                    # … renvoyés au pont, qui les réimprime
 tail -f ~/Library/Logs/PhomemoT02/bridge.log
-ls "$B/failed"               # jobs abandonnés (re-imprimables avec t02 print)
 ```
 
-Réglages par défaut (densité, tramage, port, nom BLE…) : `~/Library/Application Support/PhomemoT02/config.json`. Redémarrer le pont : `launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge`.
+Réglages par défaut dans `~/Library/Application Support/PhomemoT02/config.json` :
+
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `density`, `dither`, `trim` | `2`, `"auto"`, `true` | valeurs si l'app n'en choisit pas |
+| `keepalive_seconds` | `60` | connexion BLE gardée ouverte entre deux jobs (`0` = coupe à chaque fois) |
+| `failed_retention_days` | `7` | âge max des jobs ratés (`0` = jamais supprimés) |
+| `printer_name`, `port` | `"T02"`, `9100` | nom Bluetooth, port local |
+
+Après modification : `launchctl kickstart -k gui/$(id -u)/net.clawfire.t02bridge`.
+
+**Logs** : `bridge.log` tourne tout seul (1 Mo × 3 fichiers). `launchd.log`, à côté, ne contient que d'éventuels crashs.
 
 > ⚠️ Pour les commandes `t02 scan/print` lancées dans le Terminal, c'est **Terminal** qui doit avoir l'accès Bluetooth (Réglages › Confidentialité › Bluetooth). Le pont, lui, utilise sa propre autorisation.
 
@@ -67,7 +79,7 @@ CUPS affiche déjà « *Printer drivers are deprecated* ». Le jour où `lpadmin
 ## Dev
 
 ```bash
-python3 -m pytest -q tests/       # 17 tests, sans imprimante ni Bluetooth
+python3 -m pytest -q tests/       # 22 tests, sans imprimante ni Bluetooth
 python3 tools/gen_ppd.py          # régénère le PPD (ajoute tes formats dans SIZES)
 python3 -m t02bridge dry-run job.ras -o out.bin   # octets bruts sans BLE
 ```
