@@ -16,6 +16,7 @@ PRINT_DPI = 203
 @dataclass
 class RenderOptions:
     dither: str = "auto"      # auto | floyd | atkinson | threshold
+    photo_dither: str = "atkinson"  # what "auto" uses on grey areas: atkinson | floyd
     threshold: int = 160      # used by "threshold" (and "auto" on line art)
     trim: bool = True         # drop trailing white rows (receipt-style printing)
     min_height: int = 16      # never print less than this many rows
@@ -96,10 +97,20 @@ def to_bilevel(img: Image.Image, opts: RenderOptions) -> Image.Image:
     sharp = img.point(lambda v: 255 if v >= t else 0)
     if mode == "auto":
         mask = _halftone_mask(img)
-        if mask.getbbox() is None:  # pure line art
+        bbox = mask.getbbox()
+        if bbox is None:  # pure line art
             return sharp.convert("1", dither=Image.Dither.NONE)
-        dithered = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG).convert("L")
-        return Image.composite(dithered, sharp, mask).convert("1", dither=Image.Dither.NONE)
+        # Only the grey region is dithered (cheaper on long receipts), with the
+        # configured photo algorithm — Atkinson by default: higher contrast,
+        # fewer isolated dots, survives thermal dot gain better than FS.
+        region = img.crop(bbox)
+        if opts.photo_dither == "floyd":
+            dithered = region.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+        else:
+            dithered = _atkinson(region)
+        layer = sharp.copy()
+        layer.paste(dithered.convert("L"), bbox[:2])
+        return Image.composite(layer, sharp, mask).convert("1", dither=Image.Dither.NONE)
     if mode == "threshold":
         return sharp.convert("1", dither=Image.Dither.NONE)
     if mode == "atkinson":

@@ -24,6 +24,7 @@ class Config:
     delay_ms: int = 20
     density: int = 2                   # 1 light … 4 darkest (PPD can override per job)
     dither: str = "auto"               # auto | floyd | atkinson | threshold
+    photo_dither: str = "atkinson"     # grey areas in "auto" mode: atkinson | floyd
     threshold: int = 160
     trim: bool = True
     extra_feed: int = 0

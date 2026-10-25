@@ -33,7 +33,7 @@ def _options_from_header(h: raster.PageHeader, cfg: Config) -> tuple[JobSettings
     trim = {1: True, 2: False}.get(ints[OPT_TRIM], cfg.trim)
     return (
         JobSettings(density=density, extra_feed=feed),
-        RenderOptions(dither=dither, threshold=cfg.threshold, trim=trim),
+        RenderOptions(dither=dither, photo_dither=cfg.photo_dither, threshold=cfg.threshold, trim=trim),
     )
 
 
@@ -54,7 +54,7 @@ def prepare(blob: bytes, cfg: Config, override: dict | None = None) -> PreparedJ
         except Exception as exc:
             raise ValueError("format non reconnu (ni raster CUPS, ni image)") from exc
         settings = JobSettings(density=cfg.density, extra_feed=cfg.extra_feed)
-        ropts = RenderOptions(dither=cfg.dither, threshold=cfg.threshold, trim=cfg.trim)
+        ropts = RenderOptions(dither=cfg.dither, photo_dither=cfg.photo_dither, threshold=cfg.threshold, trim=cfg.trim)
         sources = [(img, None)]
 
     for k, v in override.items():  # CLI flags win
