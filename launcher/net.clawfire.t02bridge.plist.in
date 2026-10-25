@@ -30,8 +30,8 @@
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>StandardOutPath</key>
-    <string>@LOG_DIR@/bridge.log</string>
+    <string>@LOG_DIR@/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>@LOG_DIR@/bridge.log</string>
+    <string>@LOG_DIR@/launchd.log</string>
 </dict>
 </plist>

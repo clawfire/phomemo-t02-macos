@@ -18,12 +18,29 @@ from . import __version__, ble, pipeline
 from .config import Config, ensure_dirs
 
 
-def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
+
+
+def _setup_logging(verbose: bool, to_file: bool = False) -> None:
+    """Console for CLI commands; a rotating file (1 MB × 3) for the daemon.
+
+    In daemon mode launchd's stdout/stderr (launchd.log) only catches crashes,
+    so nothing grows forever.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    if to_file:
+        from logging.handlers import RotatingFileHandler
+
+        from .config import LOG_DIR
+
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handler: logging.Handler = RotatingFileHandler(
+            LOG_DIR / "bridge.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+        )
+    else:
+        handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, "%Y-%m-%d %H:%M:%S"))
+    logging.basicConfig(level=level, handlers=[handler], force=True)
     logging.getLogger("bleak").setLevel(logging.WARNING)
 
 
@@ -113,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "dry-run":
             sp.add_argument("-o", "--output", required=True)
     args = p.parse_args(argv)
-    _setup_logging(args.verbose)
+    _setup_logging(args.verbose, to_file=args.cmd in (None, "serve"))
     cfg = Config.load()
     ensure_dirs()
 

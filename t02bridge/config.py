@@ -11,6 +11,7 @@ APP_DIR = Path(os.environ.get("T02_HOME", Path.home() / "Library/Application Sup
 SPOOL_DIR = APP_DIR / "spool"
 FAILED_DIR = APP_DIR / "failed"
 CONFIG_FILE = APP_DIR / "config.json"
+LOG_DIR = Path(os.environ.get("T02_LOG_DIR", Path.home() / "Library/Logs/PhomemoT02"))
 
 
 @dataclass
