@@ -60,27 +60,45 @@ cp -R "$SRC/t02bridge" "$HOME_DIR/app/"
 ok "Code installé dans $HOME_DIR/app"
 
 # ── 3. App launcher (porte la permission Bluetooth) ────────────────────────
-say "Compilation de « Phomemo T02 Bridge.app »"
-mkdir -p "$APP/Contents/MacOS"
-cp "$SRC/launcher/Info.plist" "$APP/Contents/Info.plist"
-clang -O2 -Wall -o "$APP/Contents/MacOS/T02Bridge" "$SRC/launcher/launcher.c" \
-      -sectcreate __TEXT __info_plist "$SRC/launcher/Info.plist"
-codesign --force --sign - --identifier "$LABEL" "$APP" >/dev/null 2>&1 || true
-ok "App prête : $APP"
+# macOS rattache l'autorisation Bluetooth à la signature du binaire : on ne
+# recompile (et ne re-signe) que si le launcher a réellement changé, sinon
+# chaque mise à jour redemanderait l'accès Bluetooth.
+STAMP="$HOME_DIR/launcher.sha256"
+WANT="$(cat "$SRC/launcher/launcher.c" "$SRC/launcher/Info.plist" | shasum -a 256 | cut -d' ' -f1)"
+HAVE="$(cat "$STAMP" 2>/dev/null || true)"
+if [[ "$WANT" != "$HAVE" || ! -x "$APP/Contents/MacOS/T02Bridge" ]] \
+   || ! codesign --verify "$APP" >/dev/null 2>&1; then
+  say "Compilation de « Phomemo T02 Bridge.app »"
+  mkdir -p "$APP/Contents/MacOS"
+  cp "$SRC/launcher/Info.plist" "$APP/Contents/Info.plist"
+  clang -O2 -Wall -o "$APP/Contents/MacOS/T02Bridge" "$SRC/launcher/launcher.c" \
+        -sectcreate __TEXT __info_plist "$SRC/launcher/Info.plist"
+  codesign --force --sign - --identifier "$LABEL" "$APP" >/dev/null 2>&1 || true
+  echo "$WANT" > "$STAMP"
+  NEED_BT_PROMPT=1
+  ok "App prête : $APP"
+else
+  NEED_BT_PROMPT=0
+  ok "Launcher inchangé — signature et autorisation Bluetooth conservées"
+fi
 
 # ── 4. Stop de l'ancien agent (s'il tourne) ────────────────────────────────
 launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
 
 # ── 5. Autorisation Bluetooth + détection de la T02 ────────────────────────
-say "Autorisation Bluetooth — allume la T02 maintenant"
-echo "   macOS va demander l'accès Bluetooth pour « Phomemo T02 Bridge » → clique « Autoriser »."
-SCAN_OUT="$(mktemp)"
-open -W -n "$APP" --stdout "$SCAN_OUT" --stderr "$SCAN_OUT" --args \
-  /usr/bin/env "PYTHONPATH=$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" -m t02bridge scan --save || true
-sed 's/^/   /' "$SCAN_OUT"; rm -f "$SCAN_OUT"
-grep -q '"address": "' "$HOME_DIR/config.json" 2>/dev/null \
-  && ok "T02 mémorisée (config.json)" \
-  || echo "   (pas trouvée pour l'instant — pas grave, elle sera cherchée par son nom à chaque impression)"
+if (( NEED_BT_PROMPT )) || ! grep -q '"address": "' "$HOME_DIR/config.json" 2>/dev/null; then
+  say "Autorisation Bluetooth — allume la T02 maintenant"
+  (( NEED_BT_PROMPT )) && echo "   macOS va demander l'accès Bluetooth pour « Phomemo T02 Bridge » → clique « Autoriser »."
+  SCAN_OUT="$(mktemp)"
+  open -W -n "$APP" --stdout "$SCAN_OUT" --stderr "$SCAN_OUT" --args \
+    /usr/bin/env "PYTHONPATH=$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" -m t02bridge scan --save || true
+  sed 's/^/   /' "$SCAN_OUT"; rm -f "$SCAN_OUT"
+  grep -q '"address": "' "$HOME_DIR/config.json" 2>/dev/null \
+    && ok "T02 mémorisée (config.json)" \
+    || echo "   (pas trouvée pour l'instant — pas grave, elle sera cherchée par son nom à chaque impression)"
+else
+  ok "T02 déjà connue — pas de nouveau scan"
+fi
 
 # ── 6. LaunchAgent (le pont tourne en tâche de fond, relancé si besoin) ────
 say "Démarrage du pont en tâche de fond"
