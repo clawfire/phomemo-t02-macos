@@ -1,0 +1,132 @@
+*PPD-Adobe: "4.3"
+*% Phomemo T02 - macOS BLE bridge. macOS renders the page, t02bridge (LaunchAgent)
+*% converts it and sends it over Bluetooth. Raster goes to socket://127.0.0.1:9100.
+*FormatVersion: "4.3"
+*FileVersion: "1.0.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "PHOMT02.PPD"
+*Manufacturer: "Phomemo"
+*Product: "(T02)"
+*ModelName: "Phomemo T02"
+*ShortNickName: "Phomemo T02"
+*NickName: "Phomemo T02 (BLE bridge)"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "1"
+*LandscapeOrientation: Plus90
+*TTRasterizer: Type42
+*cupsVersion: 2.2
+*cupsModelNumber: 0
+*cupsManualCopies: True
+*cupsSNMPSupplies: False
+*% "-" = pass-through: CUPS stops at raster and ships it to the backend untouched.
+*cupsFilter: "application/vnd.cups-raster 0 -"
+
+*OpenUI *ColorModel/Color Mode: PickOne
+*OrderDependency: 10 AnySetup *ColorModel
+*DefaultColorModel: Gray
+*ColorModel Gray/Grayscale: "<</cupsColorOrder 0/cupsColorSpace 18/cupsBitsPerColor 8/cupsCompression 0>>setpagedevice"
+*CloseUI: *ColorModel
+
+*OpenUI *Resolution/Resolution: PickOne
+*OrderDependency: 10 AnySetup *Resolution
+*DefaultResolution: 203dpi
+*Resolution 203dpi/203 dpi: "<</HWResolution[203 203]>>setpagedevice"
+*CloseUI: *Resolution
+
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: Receipt48
+*PageSize w48h30/48 x 30 mm: "<</PageSize[136.2 85.04]/ImagingBBox null>>setpagedevice"
+*PageSize w48h40/48 x 40 mm: "<</PageSize[136.2 113.39]/ImagingBBox null>>setpagedevice"
+*PageSize w48h50/48 x 50 mm: "<</PageSize[136.2 141.73]/ImagingBBox null>>setpagedevice"
+*PageSize w48h75/48 x 75 mm: "<</PageSize[136.2 212.60]/ImagingBBox null>>setpagedevice"
+*PageSize w48h100/48 x 100 mm: "<</PageSize[136.2 283.46]/ImagingBBox null>>setpagedevice"
+*PageSize w48h150/48 x 150 mm: "<</PageSize[136.2 425.20]/ImagingBBox null>>setpagedevice"
+*PageSize w48h200/48 x 200 mm: "<</PageSize[136.2 566.93]/ImagingBBox null>>setpagedevice"
+*PageSize Receipt48/Ticket 48 mm (coupe auto): "<</PageSize[136.2 841.89]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageSize
+
+*OpenUI *PageRegion/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: Receipt48
+*PageRegion w48h30/48 x 30 mm: "<</PageSize[136.2 85.04]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h40/48 x 40 mm: "<</PageSize[136.2 113.39]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h50/48 x 50 mm: "<</PageSize[136.2 141.73]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h75/48 x 75 mm: "<</PageSize[136.2 212.60]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h100/48 x 100 mm: "<</PageSize[136.2 283.46]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h150/48 x 150 mm: "<</PageSize[136.2 425.20]/ImagingBBox null>>setpagedevice"
+*PageRegion w48h200/48 x 200 mm: "<</PageSize[136.2 566.93]/ImagingBBox null>>setpagedevice"
+*PageRegion Receipt48/Ticket 48 mm (coupe auto): "<</PageSize[136.2 841.89]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageRegion
+
+*DefaultImageableArea: Receipt48
+*ImageableArea w48h30/48 x 30 mm: "0 0 136.2 85.04"
+*ImageableArea w48h40/48 x 40 mm: "0 0 136.2 113.39"
+*ImageableArea w48h50/48 x 50 mm: "0 0 136.2 141.73"
+*ImageableArea w48h75/48 x 75 mm: "0 0 136.2 212.60"
+*ImageableArea w48h100/48 x 100 mm: "0 0 136.2 283.46"
+*ImageableArea w48h150/48 x 150 mm: "0 0 136.2 425.20"
+*ImageableArea w48h200/48 x 200 mm: "0 0 136.2 566.93"
+*ImageableArea Receipt48/Ticket 48 mm (coupe auto): "0 0 136.2 841.89"
+
+*DefaultPaperDimension: Receipt48
+*PaperDimension w48h30/48 x 30 mm: "136.2 85.04"
+*PaperDimension w48h40/48 x 40 mm: "136.2 113.39"
+*PaperDimension w48h50/48 x 50 mm: "136.2 141.73"
+*PaperDimension w48h75/48 x 75 mm: "136.2 212.60"
+*PaperDimension w48h100/48 x 100 mm: "136.2 283.46"
+*PaperDimension w48h150/48 x 150 mm: "136.2 425.20"
+*PaperDimension w48h200/48 x 200 mm: "136.2 566.93"
+*PaperDimension Receipt48/Ticket 48 mm (coupe auto): "136.2 841.89"
+
+*VariablePaperSize: True
+*MaxMediaWidth: "136.2"
+*MaxMediaHeight: "14400"
+*HWMargins: 0 0 0 0
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll]/ImagingBBox null>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 36 136.2
+*ParamCustomPageSize Height: 2 points 36 14400
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 0
+
+*% Job options travel in the raster header (cupsInteger0-3) - see t02bridge/pipeline.py
+*OpenUI *Density/Densité: PickOne
+*OrderDependency: 20 AnySetup *Density
+*DefaultDensity: Normal
+*Density Light/Clair: "<</cupsInteger0 1>>setpagedevice"
+*Density Normal/Normal: "<</cupsInteger0 2>>setpagedevice"
+*Density Dark/Foncé: "<</cupsInteger0 3>>setpagedevice"
+*Density Darkest/Très foncé: "<</cupsInteger0 4>>setpagedevice"
+*CloseUI: *Density
+
+*OpenUI *Dither/Tramage: PickOne
+*OrderDependency: 20 AnySetup *Dither
+*DefaultDither: Auto
+*Dither Auto/Auto (texte net, photo tramée): "<</cupsInteger1 0>>setpagedevice"
+*Dither Floyd/Photo - Floyd-Steinberg: "<</cupsInteger1 1>>setpagedevice"
+*Dither Threshold/Texte - seuil net: "<</cupsInteger1 2>>setpagedevice"
+*Dither Atkinson/Photo - Atkinson: "<</cupsInteger1 3>>setpagedevice"
+*CloseUI: *Dither
+
+*OpenUI *FeedAfter/Avance papier en fin de job: PickOne
+*OrderDependency: 20 AnySetup *FeedAfter
+*DefaultFeedAfter: None
+*FeedAfter None/Aucune: "<</cupsInteger2 0>>setpagedevice"
+*FeedAfter Feed5/+5 mm: "<</cupsInteger2 40>>setpagedevice"
+*FeedAfter Feed10/+10 mm: "<</cupsInteger2 80>>setpagedevice"
+*FeedAfter Feed15/+15 mm: "<</cupsInteger2 120>>setpagedevice"
+*CloseUI: *FeedAfter
+
+*OpenUI *TrimBlank/Couper le blanc en bas: PickOne
+*OrderDependency: 20 AnySetup *TrimBlank
+*DefaultTrimBlank: True
+*TrimBlank True/Oui (économise le papier): "<</cupsInteger3 1>>setpagedevice"
+*TrimBlank False/Non (taille exacte): "<</cupsInteger3 2>>setpagedevice"
+*CloseUI: *TrimBlank
+
