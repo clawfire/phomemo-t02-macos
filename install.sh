@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Phomemo T02 → macOS printer. Idempotent: re-run it to upgrade or repair.
+#
+#   ./install.sh               install / update everything
+#   ./install.sh --testpage    … and print a test page through CUPS at the end
+#
+# What it sets up (all user-level, except the CUPS queue which needs sudo):
+#   ~/Library/Application Support/PhomemoT02/{venv,app,spool,failed,config.json}
+#   ~/Applications/Phomemo T02 Bridge.app      (launcher holding the Bluetooth permission)
+#   ~/Library/LaunchAgents/net.clawfire.t02bridge.plist
+#   ~/Library/Logs/PhomemoT02/bridge.log
+#   CUPS queue "Phomemo_T02"  →  socket://127.0.0.1:9100
+set -euo pipefail
+
+LABEL="net.clawfire.t02bridge"
+QUEUE="Phomemo_T02"
+SRC="$(cd "$(dirname "$0")" && pwd)"
+HOME_DIR="$HOME/Library/Application Support/PhomemoT02"
+LOG_DIR="$HOME/Library/Logs/PhomemoT02"
+APP="$HOME/Applications/Phomemo T02 Bridge.app"
+AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
+PORT=9100
+TESTPAGE=0
+[[ "${1:-}" == "--testpage" ]] && TESTPAGE=1
+
+say()  { printf '\033[1;36m▸\033[0m %s\n' "$*"; }
+ok()   { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
+die()  { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+
+[[ "$(uname)" == "Darwin" ]] || die "macOS uniquement."
+
+# ── 1. Prérequis ───────────────────────────────────────────────────────────
+say "Vérification des prérequis"
+PY=""
+for cand in "${T02_PYTHON:-}" python3.13 python3.12 python3.11 python3.10 python3; do
+  [[ -z "$cand" ]] && continue
+  if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(sys.version_info < (3,10))' 2>/dev/null; then
+    PY="$(command -v "$cand")"; break
+  fi
+done
+[[ -n "$PY" ]] || die "Python ≥ 3.10 introuvable (brew install python, ou pyenv). Le python3 d'Apple (3.9) est trop vieux."
+command -v clang >/dev/null 2>&1 || die "clang manquant : lance « xcode-select --install » puis relance ce script."
+ok "Python : $PY ($("$PY" -V 2>&1))"
+
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -qv -e "Python" -e "COMMAND"; then
+  die "Le port $PORT est déjà pris par autre chose (lsof -iTCP:$PORT). Change « port » dans config.json."
+fi
+
+# ── 2. Environnement Python + code ─────────────────────────────────────────
+say "Environnement Python (venv + bleak + Pillow)"
+mkdir -p "$HOME_DIR" "$LOG_DIR"
+if [[ ! -x "$HOME_DIR/venv/bin/python3" ]] || ! "$HOME_DIR/venv/bin/python3" -c 'import sys; sys.exit(sys.version_info < (3,10))' 2>/dev/null; then
+  rm -rf "$HOME_DIR/venv"
+  "$PY" -m venv "$HOME_DIR/venv"
+fi
+"$HOME_DIR/venv/bin/python3" -m pip install --quiet --upgrade pip
+"$HOME_DIR/venv/bin/python3" -m pip install --quiet -r "$SRC/requirements.txt"
+rm -rf "$HOME_DIR/app" && mkdir -p "$HOME_DIR/app"
+cp -R "$SRC/t02bridge" "$HOME_DIR/app/"
+ok "Code installé dans $HOME_DIR/app"
+
+# ── 3. App launcher (porte la permission Bluetooth) ────────────────────────
+say "Compilation de « Phomemo T02 Bridge.app »"
+mkdir -p "$APP/Contents/MacOS"
+cp "$SRC/launcher/Info.plist" "$APP/Contents/Info.plist"
+clang -O2 -Wall -o "$APP/Contents/MacOS/T02Bridge" "$SRC/launcher/launcher.c" \
+      -sectcreate __TEXT __info_plist "$SRC/launcher/Info.plist"
+codesign --force --sign - --identifier "$LABEL" "$APP" >/dev/null 2>&1 || true
+ok "App prête : $APP"
+
+# ── 4. Stop de l'ancien agent (s'il tourne) ────────────────────────────────
+launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+
+# ── 5. Autorisation Bluetooth + détection de la T02 ────────────────────────
+say "Autorisation Bluetooth — allume la T02 maintenant"
+echo "   macOS va demander l'accès Bluetooth pour « Phomemo T02 Bridge » → clique « Autoriser »."
+SCAN_OUT="$(mktemp)"
+open -W -n "$APP" --stdout "$SCAN_OUT" --stderr "$SCAN_OUT" --args \
+  /usr/bin/env "PYTHONPATH=$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" -m t02bridge scan --save || true
+sed 's/^/   /' "$SCAN_OUT"; rm -f "$SCAN_OUT"
+grep -q '"address": "' "$HOME_DIR/config.json" 2>/dev/null \
+  && ok "T02 mémorisée (config.json)" \
+  || echo "   (pas trouvée pour l'instant — pas grave, elle sera cherchée par son nom à chaque impression)"
+
+# ── 6. LaunchAgent (le pont tourne en tâche de fond, relancé si besoin) ────
+say "Démarrage du pont en tâche de fond"
+mkdir -p "$(dirname "$AGENT")"
+sed -e "s#@APP@#$APP#g" -e "s#@HOME_DIR@#$HOME_DIR#g" -e "s#@LOG_DIR@#$LOG_DIR#g" \
+    "$SRC/launcher/$LABEL.plist.in" > "$AGENT"
+plutil -lint "$AGENT" >/dev/null
+launchctl bootstrap "gui/$(id -u)" "$AGENT"
+for _ in {1..20}; do nc -z 127.0.0.1 "$PORT" 2>/dev/null && break; sleep 0.5; done
+nc -z 127.0.0.1 "$PORT" 2>/dev/null || die "Le pont n'écoute pas sur $PORT — regarde $LOG_DIR/bridge.log"
+ok "Pont actif sur 127.0.0.1:$PORT"
+
+# ── 7. File d'impression CUPS ──────────────────────────────────────────────
+say "Ajout de l'imprimante « Phomemo T02 » (mot de passe admin demandé)"
+sudo lpadmin -p "$QUEUE" -E \
+  -v "socket://127.0.0.1:$PORT" \
+  -P "$SRC/ppd/Phomemo-T02.ppd" \
+  -D "Phomemo T02" -L "Bluetooth (via T02 Bridge)" \
+  -o printer-is-shared=false
+ok "Imprimante ajoutée : elle apparaît dans Réglages > Imprimantes et dans ⌘P"
+
+if (( TESTPAGE )); then
+  say "Page de test via CUPS"
+  TMP_PNG="$(mktemp -t t02test).png"
+  PYTHONPATH="$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" -c \
+    "import sys; from t02bridge.__main__ import _testpage; open(sys.argv[1],'wb').write(_testpage())" "$TMP_PNG"
+  lp -d "$QUEUE" -o media=Receipt48 "$TMP_PNG" >/dev/null && ok "Envoyée — suis le log : tail -f \"$LOG_DIR/bridge.log\""
+fi
+
+echo
+ok "Terminé. Imprime depuis n'importe quelle app : ⌘P → Phomemo T02."
