@@ -401,3 +401,10 @@ def test_auto_mode_uses_atkinson_on_greys_by_default():
     assert auto == _atkinson(img).tobytes()
     floyd = to_bilevel(img, RenderOptions(dither="auto", photo_dither="floyd")).tobytes()
     assert floyd != auto
+
+
+# ---------------------------------------------------------------- hardening
+def test_oversized_raster_header_rejected():
+    blob = b"RaS2" + header_bytes("<", 100_000, 100_000)  # 10 Gpx declared, no data
+    with pytest.raises(ValueError, match="too large"):
+        raster.pages_from_bytes(blob)

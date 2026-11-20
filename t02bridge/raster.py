@@ -91,6 +91,13 @@ def _read_exact(stream: BinaryIO, n: int) -> bytes:
     return buf
 
 
+# The header is untrusted input (any local process can write to the socket):
+# bound what we are willing to allocate. 100 MP / 256 MiB is far above any
+# receipt a 384-dot printer can use.
+MAX_PIXELS = 100_000_000
+MAX_BYTES = 256 * 1024 * 1024
+
+
 def _blank_byte(h: PageHeader) -> int:
     """Value of a 'white' byte in this colour space (used by RLE code 128)."""
     return 0xFF if (h.color_space in LUMINANCE_SPACES or h.color_space in RGB_SPACES) else 0x00
@@ -163,6 +170,8 @@ def iter_pages(stream: BinaryIO) -> Iterator[RasterPage]:
         h = _parse_header(raw, endian)
         if h.width == 0 or h.height == 0:
             continue
+        if h.width * h.height > MAX_PIXELS or h.bytes_per_line * h.height > MAX_BYTES:
+            raise ValueError(f"raster page too large: {h.width}x{h.height}")
         if version == 2:
             data = _read_compressed(stream, h)
         else:
