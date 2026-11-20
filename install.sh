@@ -54,7 +54,7 @@ if [[ ! -x "$HOME_DIR/venv/bin/python3" ]] || ! "$HOME_DIR/venv/bin/python3" -c 
   "$PY" -m venv "$HOME_DIR/venv"
 fi
 "$HOME_DIR/venv/bin/python3" -m pip install --quiet --upgrade pip
-"$HOME_DIR/venv/bin/python3" -m pip install --quiet -r "$SRC/requirements.txt"
+"$HOME_DIR/venv/bin/python3" -m pip install --quiet --require-hashes -r "$SRC/requirements.lock"
 rm -rf "$HOME_DIR/app" && mkdir -p "$HOME_DIR/app"
 cp -R "$SRC/t02bridge" "$HOME_DIR/app/"
 ok "Code installé dans $HOME_DIR/app"
