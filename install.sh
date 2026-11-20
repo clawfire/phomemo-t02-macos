@@ -9,7 +9,7 @@
 #   ~/Applications/Phomemo T02 Bridge.app      (launcher holding the Bluetooth permission)
 #   ~/Library/LaunchAgents/net.clawfire.t02bridge.plist
 #   ~/Library/Logs/PhomemoT02/bridge.log
-#   CUPS queue "Phomemo_T02"  →  socket://127.0.0.1:9100
+#   CUPS queue "Phomemo_T02"  →  socket://127.0.0.1:<port>   (9100 par défaut)
 set -euo pipefail
 
 LABEL="net.clawfire.t02bridge"
@@ -19,7 +19,7 @@ HOME_DIR="$HOME/Library/Application Support/PhomemoT02"
 LOG_DIR="$HOME/Library/Logs/PhomemoT02"
 APP="$HOME/Applications/Phomemo T02 Bridge.app"
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
-PORT=9100
+PORT=9100   # default; the real value comes from config.json (see step 2)
 TESTPAGE=0
 [[ "${1:-}" == "--testpage" ]] && TESTPAGE=1
 
@@ -42,9 +42,8 @@ done
 command -v clang >/dev/null 2>&1 || die "clang manquant : lance « xcode-select --install » puis relance ce script."
 ok "Python : $PY ($("$PY" -V 2>&1))"
 
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -qv -e "Python" -e "COMMAND"; then
-  die "Le port $PORT est déjà pris par autre chose (lsof -iTCP:$PORT). Change « port » dans config.json."
-fi
+# Re-run: our own agent (KeepAlive) legitimately holds the port. Stop it first.
+launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
 
 # ── 2. Environnement Python + code ─────────────────────────────────────────
 say "Environnement Python (venv + bleak + Pillow)"
@@ -58,6 +57,30 @@ fi
 rm -rf "$HOME_DIR/app" && mkdir -p "$HOME_DIR/app"
 cp -R "$SRC/t02bridge" "$HOME_DIR/app/"
 ok "Code installé dans $HOME_DIR/app"
+
+# Port: config.json wins; if it is taken by something else, move to the next
+# free one and save it, so the bridge, menu bar and CUPS queue all agree.
+PORT="$(PYTHONPATH="$HOME_DIR/app" "$HOME_DIR/venv/bin/python3" - <<'PY'
+import socket, sys
+from t02bridge.config import Config, ensure_dirs
+cfg = Config.load()
+def free(p):
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try: s.bind((cfg.host, p)); return True
+        except OSError: return False
+want = cfg.port
+for p in range(want, want + 50):
+    if free(p): break
+else:
+    sys.exit(f"aucun port libre entre {want} et {want + 49}")
+if p != want:
+    print(f"   port {want} occupé → utilisation de {p} (enregistré dans config.json)", file=sys.stderr)
+    cfg.port = p; ensure_dirs(); cfg.save()
+print(p)
+PY
+)" || die "Aucun port libre : change « port » dans config.json."
+ok "Port du pont : $PORT"
 
 # ── 3. App launcher (porte la permission Bluetooth) ────────────────────────
 # macOS rattache l'autorisation Bluetooth à la signature du binaire : on ne
