@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 from dataclasses import asdict, dataclass, fields
@@ -13,6 +14,15 @@ FAILED_DIR = APP_DIR / "failed"
 CONFIG_FILE = APP_DIR / "config.json"
 STATUS_FILE = APP_DIR / "status.json"   # published by the bridge, read by the menu-bar app
 LOG_DIR = Path(os.environ.get("T02_LOG_DIR", Path.home() / "Library/Logs/PhomemoT02"))
+
+
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 @dataclass
@@ -43,6 +53,8 @@ class Config:
             for k, v in data.items():
                 if k in known:
                     setattr(cfg, k, v)
+        if not _is_loopback(cfg.host):
+            raise ValueError(f"host {cfg.host!r} is not loopback: the bridge has no authentication")
         return cfg
 
     def save(self) -> None:

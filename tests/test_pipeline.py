@@ -401,3 +401,15 @@ def test_auto_mode_uses_atkinson_on_greys_by_default():
     assert auto == _atkinson(img).tobytes()
     floyd = to_bilevel(img, RenderOptions(dither="auto", photo_dither="floyd")).tobytes()
     assert floyd != auto
+
+
+# ---------------------------------------------------------------- hardening
+def test_non_loopback_host_rejected(tmp_path, monkeypatch):
+    from t02bridge import config
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text('{"host": "0.0.0.0"}')
+    monkeypatch.setattr(config, "CONFIG_FILE", cfg_file)
+    with pytest.raises(ValueError, match="loopback"):
+        Config.load()
+    cfg_file.write_text('{"host": "::1"}')
+    assert Config.load().host == "::1"
